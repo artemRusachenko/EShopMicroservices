@@ -1,4 +1,5 @@
 using BuildingBlocks.Exceptions.Handler;
+using Discount.Grpc;
 using HealthChecks.UI.Client;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Caching.Distributed;
@@ -6,6 +7,8 @@ using Microsoft.Extensions.Caching.Distributed;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
+//Application Services
 builder.Services.AddCarter();
 builder.Services.AddMediatR(config =>
 {
@@ -14,6 +17,7 @@ builder.Services.AddMediatR(config =>
     config.AddOpenBehavior(typeof(LoggingBehavior<,>));
 });
 
+//Data Services
 builder.Services.AddMarten(opts =>
 {
     opts.Connection(builder.Configuration.GetConnectionString("Database")!);
@@ -23,17 +27,32 @@ builder.Services.AddMarten(opts =>
 builder.Services.AddScoped<IBasketRepository, BasketRepository>();
 
 builder.Services.Decorate<IBasketRepository, CachedBasketRepository>();
+
 //The same way without using library
 /*builder.Services.AddScoped<IBasketRepository>(provider =>
 {
     var basketRepository = provider.GetRequiredService<BasketRepository>();
     return new CachedBasketRepository(basketRepository, provider.GetRequiredService<IDistributedCache>());
 });*/
-
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
 });
+
+//Grpc Services
+builder.Services.AddGrpcClient<DiscountProtoService.DiscountProtoServiceClient>(options =>
+{
+    options.Address = new Uri(builder.Configuration["GrpcSettings:DiscountUrl"]!);
+})
+.ConfigurePrimaryHttpMessageHandler(() =>
+ {
+     var handler = new HttpClientHandler
+     {
+         ServerCertificateCustomValidationCallback =
+         HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+     };
+     return handler;
+ });
 
 builder.Services.AddExceptionHandler<CustomExceptionHandler>();
 
